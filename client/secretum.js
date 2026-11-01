@@ -196,6 +196,25 @@
       distributeFees: ({ devWallet, buybackWallet }) => ix(
         [meta(configPda(), false, true), meta(devWallet, false, true), meta(buybackWallet, false, true)], DISC.distribute_fees),
 
+      /** Raydium CPMM swap for a graduated coin. inputIsSol: buy the coin with WSOL; else sell it. */
+      raydiumSwap: ({ payer, mint, ammConfig, inputIsSol, amountIn, minOut = 0n }) => {
+        const r = raydium(mint);
+        const wsolAcc = ata(payer, WSOL_MINT, TOKEN_PROGRAM_ID);
+        const tokAcc = ata(payer, mint, TOKEN_2022_PROGRAM_ID);
+        const solVaultR = r.tokenIs0 ? r.token1Vault : r.token0Vault;
+        const tokVaultR = r.tokenIs0 ? r.token0Vault : r.token1Vault;
+        const [inAcc, outAcc, inVault, outVault, inProg, outProg, inMint, outMint] = inputIsSol
+          ? [wsolAcc, tokAcc, solVaultR, tokVaultR, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, WSOL_MINT, mint]
+          : [tokAcc, wsolAcc, tokVaultR, solVaultR, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, mint, WSOL_MINT];
+        return new TransactionInstruction({
+          programId: RAY,
+          data: toBuf(new W().bytes(hex('8fbe5adac41e33de')).u64(amountIn).u64(minOut).out()),
+          keys: [meta(payer, true, true), meta(r.authority, false, false), meta(ammConfig, false, false), meta(r.poolState, false, true),
+            meta(inAcc, false, true), meta(outAcc, false, true), meta(inVault, false, true), meta(outVault, false, true),
+            meta(inProg, false, false), meta(outProg, false, false), meta(inMint, false, false), meta(outMint, false, false), meta(r.observation, false, true)],
+        });
+      },
+
       /** Graduation needs more compute than the 200k default. */
       graduateComputeIx: () => ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }),
     };

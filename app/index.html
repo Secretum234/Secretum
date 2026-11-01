@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Secretum: every coin sealed at birth</title>
+<meta name="description" content="Fair-launch coins on Solana. Every launch is sealed with a certificate anchored on Monero, Zcash and HyperEVM." />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; connect-src 'self' https: wss:; script-src 'self'; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'" />
+<link rel="icon" href="favicon.svg" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="wordmark" href="#/"><span id="mark" aria-hidden="true"></span>Secretum</a>
+    <nav aria-label="Main">
+      <a href="#/" data-nav="coins">Coins</a>
+      <a href="#/how" data-nav="how">How it works</a>
+      <a href="#/fees" data-nav="fees">Fees</a>
+    </nav>
+    <span class="spacer"></span>
+    <span id="net" class="net"></span>
+    <button id="connect" class="btn">Connect wallet</button>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<footer>
+  <div class="wrap">
+    <span>Secretum is open source and unaudited. Only trade what you can afford to lose.</span>
+    <span><a href="https://github.com/Secretum234/Secretum" rel="noopener">Source code</a></span>
+  </div>
+</footer>
+
+<dialog id="launch" aria-labelledby="launch-title">
+  <form id="launch-form" method="dialog">
+    <h2 id="launch-title">Launch a coin</h2>
+    <p class="muted flush">Name, ticker and image are written to the coin itself and can never be changed.</p>
+    <div class="two">
+      <label class="f">Name <input class="in" name="name" maxlength="32" required autocomplete="off" placeholder="Night Archive" /></label>
+      <label class="f">Ticker <input class="in" name="symbol" maxlength="10" required autocomplete="off" placeholder="ARCH" /></label>
+    </div>
+    <label class="f">Image link <input class="in" name="uri" maxlength="200" inputmode="url" autocomplete="off" placeholder="https://… or ipfs://…" /></label>
+    <label class="f">Buy at launch (SOL, optional) <input class="in" name="devBuy" inputmode="decimal" autocomplete="off" placeholder="0" /></label>
+    <p class="note" id="launch-note"></p>
+    <div class="actions">
+      <button type="button" class="btn line" id="launch-cancel">Cancel</button>
+      <button type="submit" class="btn wax" id="launch-submit">Launch coin</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script src="lib/web3.iife.min.js"></script>
+<script src="lib/secretum.js"></script>
+<script src="seal.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

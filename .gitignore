@@ -1,8 +1,9 @@
 node_modules/
 target/
-!target/deploy/.gitkeep
 *.log
 .env
-# Never commit keypairs (program upgrade authority, certifier, admin)
+certificates.json
+certificates.json.tmp
+# Never commit keypairs (program, upgrade authority, admin, certifier, wallets)
 *-keypair.json
 keys/

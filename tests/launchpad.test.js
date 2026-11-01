@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const crypto = require('crypto');
 const { LiteSVM, FailedTransactionMetadata, Clock } = require('litesvm');
-const kit = require('@solana/kit');
+const { makeSvm } = require('../devtools/svm');
 const {
   Keypair, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, ComputeBudgetProgram,
 } = require('@solana/web3.js');
@@ -14,7 +14,7 @@ const spl = require('@solana/spl-token');
 const S = require('../client/secretum');
 
 const ROOT = path.join(__dirname, '..');
-const PROGRAM_ID = new PublicKey('HPomwh2M3sMcD9LpTALifnT41RQYx3rq7sUn3HrvukpR');
+const PROGRAM_ID = new PublicKey(require('../devtools/program-id').PROGRAM_ID);
 const RAYDIUM_SO = process.env.RAYDIUM_SO || path.join(ROOT, 'vendor/raydium_cp_swap.so');
 const sol = (x) => BigInt(Math.round(x * LAMPORTS_PER_SOL));
 
@@ -150,33 +150,6 @@ function wrapSolIxs(owner, amount) {
     SystemProgram.transfer({ fromPubkey: owner, toPubkey: wsolAta, lamports: amount }),
     spl.createSyncNativeInstruction(wsolAta, S.TOKEN_PROGRAM_ID),
   ];
-}
-
-// LiteSVM 1.x speaks @solana/kit; the app speaks @solana/web3.js. This thin adapter lets the
-// tests send exactly the transactions the website builds (serialized to wire format).
-function makeSvm() {
-  const raw = new LiteSVM().withNativeMints();
-  const A = (pk) => kit.address(new PublicKey(pk).toBase58());
-  const dec = kit.getTransactionDecoder();
-  return {
-    addProgramFromFile: (pk, file) => raw.addProgramFromFile(A(pk), file),
-    airdrop: (pk, l) => raw.airdrop(A(pk), kit.lamports(BigInt(l))),
-    sendTransaction: (tx) => raw.sendTransaction(dec.decode(tx.serialize())),
-    latestBlockhash: () => raw.latestBlockhash(),
-    expireBlockhash: () => raw.expireBlockhash(),
-    getClock: () => raw.getClock(),
-    setClock: (c) => raw.setClock(c),
-    minimumBalanceForRentExemption: (n) => raw.minimumBalanceForRentExemption(BigInt(n)),
-    getAccount(pk) {
-      const a = raw.getAccount(A(pk));
-      if (!a.exists) return null;
-      return { lamports: Number(a.lamports), data: Uint8Array.from(a.data), owner: new PublicKey(a.programAddress), executable: a.executable };
-    },
-    setAccount(pk, a) {
-      raw.setAccount({ address: A(pk), data: Uint8Array.from(a.data), lamports: kit.lamports(BigInt(a.lamports)),
-        programAddress: A(a.owner), executable: !!a.executable, space: BigInt(a.data.length) });
-    },
-  };
 }
 
 // ------------------------------------------------------------------ setup
