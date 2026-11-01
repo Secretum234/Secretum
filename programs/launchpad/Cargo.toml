@@ -1,0 +1,29 @@
+[package]
+name = "launchpad"
+version = "0.1.0"
+description = "Fair-launch bonding curve launchpad that graduates to Raydium CPMM"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "launchpad"
+
+[features]
+default = []
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+# Build for devnet: links against Raydium's devnet CPMM program id.
+devnet = ["raydium-cp-swap/devnet"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(feature, values("anchor-debug", "custom-heap", "custom-panic"))',
+    'cfg(target_os, values("solana"))',
+] }
+
+[dependencies]
+anchor-lang = { version = "=1.0.2", features = ["init-if-needed"] }
+anchor-spl = { version = "=1.0.2", features = ["token_2022", "token_2022_extensions"] }
+raydium-cp-swap = { path = "../../vendor/raydium-cp-swap", features = ["cpi"] }
+solana-sha256-hasher = { version = "3", features = ["sha2"] }

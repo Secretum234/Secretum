@@ -1,0 +1,45 @@
+[package]
+name = "raydium-cp-swap"
+version = "0.2.0"
+description = "Raydium constant product AMM, supports Token2022 and without Openbook"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "raydium_cp_swap"
+
+[features]
+no-entrypoint = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+enable-log = []
+devnet = []
+localnet = []
+client = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+# Feature cfgs referenced by upstream macros (anchor #[program]/#[derive(Accounts)]
+# and the solana entrypoint) but not declared as our own features. Declaring them
+# here silences rustc check-cfg false positives without touching code.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(feature, values("anchor-debug", "custom-heap", "custom-panic"))',
+    'cfg(target_os, values("solana"))',
+] }
+
+[dependencies]
+anchor-lang = { version = "=1.0.2", features = ["init-if-needed", "event-cpi"] }
+anchor-spl = { version = "=1.0.2", features = ["memo", "metadata"] }
+
+uint = "0.10.0"
+solana-security-txt = "1.1.1"
+bytemuck = { version = "1.4.0", features = ["derive", "min_const_generics"] }
+arrayref = { version = "0.3.6" }
+
+[dev-dependencies]
+spl-math = { version = "0.3", features = ["no-entrypoint"] }
+quickcheck = "1.0.3"
+proptest = "1.0"
+rand = "0.9.0"

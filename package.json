@@ -1,0 +1,20 @@
+{
+  "name": "secretum",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test --test-reporter=spec tests/*.test.js",
+    "build": "cd programs/launchpad && cargo-build-sbf"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "bs58": "^6.0.0",
+    "litesvm": "^1.6.1"
+  }
+}
