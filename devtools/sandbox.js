@@ -20,7 +20,9 @@ const sol = (x) => BigInt(Math.round(x * LAMPORTS_PER_SOL));
 
 const svm = makeSvm({ sigverify: false });
 const lp = S.makeClient(PROGRAM_ID, 'mainnet');
-svm.addProgramFromFile(PROGRAM_ID, path.join(ROOT, 'target/deploy/launchpad.so'));
+// Use your own build if you've run `npm run build`; otherwise the prebuilt copy in the repo.
+const BUILT = path.join(ROOT, 'target/deploy/launchpad.so');
+svm.addProgramFromFile(PROGRAM_ID, fs.existsSync(BUILT) ? BUILT : path.join(__dirname, 'prebuilt/launchpad.so'));
 svm.addProgramFromFile(lp.RAYDIUM_CPMM, path.join(ROOT, 'vendor/raydium_cp_swap.so'));
 
 let slot = 1000n;
