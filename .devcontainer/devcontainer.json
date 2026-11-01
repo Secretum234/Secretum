@@ -1,0 +1,10 @@
+{
+  "name": "Secretum",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm install",
+  "postAttachCommand": "npm run sandbox",
+  "forwardPorts": [8899],
+  "portsAttributes": {
+    "8899": { "label": "Secretum sandbox", "onAutoForward": "openBrowser" }
+  }
+}

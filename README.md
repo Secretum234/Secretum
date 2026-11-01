@@ -40,7 +40,11 @@ tests/                Integration tests (LiteSVM) incl. Raydium's real CPMM prog
 vendor/               Raydium CPMM source (Apache-2.0) and its compiled program, used for graduation and tests
 ```
 
-## Try it locally (no Solana install, no real funds)
+## Try it (no Solana install, no real funds)
+
+**Easiest, any computer:** on the GitHub repo page click **Code → Codespaces → Create codespace on main**. It installs everything and opens the site in a new tab (allow pop-ups if your browser blocks it). If no tab appears, open the **Ports** tab and click the globe next to port 8899.
+
+**On a Mac or Linux machine** (on Windows, use WSL, because the sandbox's Solana runtime has no native Windows build):
 
 ```bash
 npm install

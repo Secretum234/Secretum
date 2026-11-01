@@ -7,6 +7,13 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const { Keypair, PublicKey, Transaction, LAMPORTS_PER_SOL, ComputeBudgetProgram } = require('@solana/web3.js');
+if (process.platform === 'win32') {
+  console.error(`The sandbox's Solana runtime (LiteSVM) has no Windows build.
+Run it in GitHub Codespaces instead (nothing to install): on the repo page click
+Code > Codespaces > Create codespace, and the site opens automatically.
+Or use WSL (Windows Subsystem for Linux). See README "Try it locally".`);
+  process.exit(1);
+}
 const { FailedTransactionMetadata, Clock } = require('litesvm');
 const bs58 = (require('bs58').default || require('bs58'));
 const S = require('../client/secretum');
