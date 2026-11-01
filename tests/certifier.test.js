@@ -1,10 +1,9 @@
-// Certification service test: real program in LiteSVM, real HyperEVM adapter against a local EVM
-// (ganache), Monero and Zcash adapters against mock wallet RPC servers.
+// Certification service test: real program in LiteSVM; the real HyperEVM adapter signs real
+// transactions against a mock EVM RPC; Monero and Zcash adapters against mock wallet RPCs.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
 const path = require('path');
-const ganache = require('ganache');
 const { ethers } = require('ethers');
 const { Keypair, PublicKey, Transaction, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const { FailedTransactionMetadata } = require('litesvm');
@@ -14,7 +13,7 @@ const { runOnce, memoryStore } = require('../certifier/certifier');
 
 const ROOT = path.join(__dirname, '..');
 const sol = (x) => BigInt(Math.round(x * LAMPORTS_PER_SOL));
-let svm, lp, admin, certifier, user, servers = [], evm;
+let svm, lp, admin, certifier, user, servers = [];
 
 function ok(ixs, signers) {
   const tx = new Transaction().add(...ixs);
@@ -76,14 +75,26 @@ before(() => {
     ok([lp.createToken({ creator: user.publicKey, mint: m.publicKey, name, symbol: name.toUpperCase(), uri: '' })], [user, m]);
     mints.push(m.publicKey);
   }
-  evm = ganache.provider({ logging: { quiet: true }, chain: { chainId: 999 }, wallet: { totalAccounts: 1, defaultBalance: 10 } });
 });
 after(() => { for (const s of servers) s.close(); });
 
 test('certifier anchors on all three chains, records txids on-chain once, and survives failures', async () => {
-  // --- HyperEVM: real EVM transactions on a local chain
-  const pk = Object.values(evm.getInitialAccounts())[0].secretKey;
-  const hyper = require('../certifier/chains/hyperevm')({ privateKey: pk, provider: new ethers.BrowserProvider(evm) });
+  // --- HyperEVM: a minimal EVM JSON-RPC that accepts the real signed transactions ethers builds
+  const sent = new Map();
+  let nonce = 0;
+  const evm = await mockRpc({
+    eth_chainId: () => '0x3e7', // 999
+    eth_blockNumber: () => '0x10',
+    eth_getTransactionCount: () => '0x' + nonce.toString(16),
+    eth_estimateGas: () => '0x7530',
+    eth_gasPrice: () => '0x3b9aca00',
+    eth_maxPriorityFeePerGas: () => '0x3b9aca00',
+    eth_getBlockByNumber: () => ({ number: '0x10', baseFeePerGas: '0x3b9aca00', hash: '0x' + '1'.repeat(64), parentHash: '0x' + '0'.repeat(64), timestamp: '0x0', gasLimit: '0x1c9c380', gasUsed: '0x0', miner: '0x' + '0'.repeat(40), extraData: '0x', difficulty: '0x0', nonce: '0x0000000000000000', transactions: [] }),
+    eth_sendRawTransaction: ([raw]) => { const tx = ethers.Transaction.from(raw); sent.set(tx.hash, tx); nonce++; return tx.hash; },
+    eth_getTransactionReceipt: ([h]) => sent.has(h) ? { transactionHash: h, blockNumber: '0x11', blockHash: '0x' + '2'.repeat(64), transactionIndex: '0x0', status: '0x1', gasUsed: '0x5208', cumulativeGasUsed: '0x5208', logs: [], logsBloom: '0x' + '0'.repeat(512), from: sent.get(h).from, to: sent.get(h).to, contractAddress: null, effectiveGasPrice: '0x3b9aca00', type: '0x2' } : null,
+  });
+  const hyperKey = ethers.Wallet.createRandom();
+  const hyper = require('../certifier/chains/hyperevm')({ privateKey: hyperKey.privateKey, provider: new ethers.JsonRpcProvider(evm.url, 999, { staticNetwork: true, batchMaxCount: 1 }) });
 
   // --- Monero wallet RPC mock (fails the first transfer to prove retry/no double-send)
   let moneroFailOnce = true, moneroTx = 0;
@@ -119,15 +130,17 @@ test('certifier anchors on all three chains, records txids on-chain once, and su
   // Round 3: past the 15 minute delay
   await runOnce({ solana, chains: [hyper, xmrAdapter, zecAdapter], store, nowSec: launchTs + 901, log: quiet });
 
-  const prov = new ethers.BrowserProvider(evm);
   for (const m of mints) {
     const c = curve(m);
     const hashHex = S.toHex(c.launchHash);
     const payload = S.certificatePayload(hashHex);
     assert.equal(c.certFlags, 0b111, 'all three chains recorded on Solana');
-    // HyperEVM: the calldata on-chain is exactly the payload
-    const tx = await prov.getTransaction(c.certs.hyperevm);
+    // HyperEVM: the signed transaction's calldata is exactly the payload, sent to ourselves
+    const tx = sent.get(c.certs.hyperevm);
     assert.equal(ethers.toUtf8String(tx.data), payload);
+    assert.equal(tx.from, hyperKey.address);
+    assert.equal(tx.to, hyperKey.address);
+    assert.equal(tx.chainId, 999n);
     // Monero: payment id = first 8 bytes of hash; proof signs the full payload
     const rec = store.get(m.toBase58());
     assert.equal(rec.chains.monero.paymentId, hashHex.slice(0, 16));
