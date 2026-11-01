@@ -2,27 +2,25 @@
 // Secretum admin tool.
 //
 //   node devtools/admin.js show
-//   node devtools/admin.js init   --admin keys/admin.json --certifier <pubkey> --dev-wallet <pubkey> --buyback-wallet <pubkey> [options]
+//   node devtools/admin.js init   --deployer ~/.config/solana/id.json --admin-address <pubkey>
+//                                 --certifier <pubkey> --dev-wallet <pubkey> --buyback-wallet <pubkey> [options]
+//        (init must be signed by the program's upgrade authority, i.e. the key that deployed it)
 //   node devtools/admin.js update --admin keys/admin.json [any option below]
 //   node devtools/admin.js pause | unpause --admin keys/admin.json
 //   node devtools/admin.js propose-admin --admin keys/admin.json --new-admin <pubkey>
 //   node devtools/admin.js distribute --payer keys/any.json      (permissionless: pays out accrued fees)
 //
 // Options: --cluster devnet|mainnet  --rpc <url>  --program-id <id>
-//          --amm-config <raydium cpmm config>  --trade-fee-bps 100  --dev-share-bps 1000
+//          --amm-config <raydium cpmm config> (or --amm-config-index 0)  --trade-fee-bps 100  --dev-share-bps 1000
 //          --creation-fee-sol 0.02  --graduation-fee-sol 1  --initial-virtual-sol 42.5  --yes
 const fs = require('fs');
 const web3 = require('@solana/web3.js');
 const S = require('../client/secretum');
 const { PROGRAM_ID } = require('./program-id');
 
-// Raydium CPMM fee configs (index 0, 0.25% fee). The program checks the account is owned by
-// Raydium's CPMM program, so a wrong address is rejected rather than silently used.
-const DEFAULT_AMM_CONFIG = {
-  mainnet: 'D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2',
-  devnet: '9zSzfkYy6awexsHvmggeH36pfVUdDGyCcwmjT3AQPBj6',
-};
-
+// Raydium CPMM fee config: derived from Raydium's seeds (index 0 = 0.25% fee), so it's right on
+// each cluster. Mainnet index 0 is D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2. The program also
+// checks the account is owned by Raydium's CPMM, so a wrong address is rejected.
 const argv = process.argv.slice(2);
 const cmd = argv[0];
 const opt = (name, d) => { const i = argv.indexOf('--' + name); return i >= 0 ? argv[i + 1] : d; };
@@ -63,7 +61,7 @@ function params(base) {
     certifier: pk('certifier', base?.certifier),
     devWallet: pk('dev-wallet', base?.devWallet),
     buybackWallet: pk('buyback-wallet', base?.buybackWallet),
-    raydiumAmmConfig: pk('amm-config', base?.raydiumAmmConfig ?? DEFAULT_AMM_CONFIG[cluster]),
+    raydiumAmmConfig: pk('amm-config', base?.raydiumAmmConfig ?? lp.raydiumAmmConfig(Number(opt('amm-config-index', 0)))),
     devShareBps: Number(opt('dev-share-bps', base?.devShareBps ?? 1000)),
     tradeFeeBps: Number(opt('trade-fee-bps', base?.tradeFeeBps ?? 100)),
     creationFee: opt('creation-fee-sol') != null ? lamports(opt('creation-fee-sol')) : (base?.creationFee ?? lamports(0.02)),
@@ -76,6 +74,13 @@ function params(base) {
 async function send(ix, signer) {
   const sig = await web3.sendAndConfirmTransaction(conn, new web3.Transaction().add(ix), [signer], { commitment: 'confirmed' });
   console.log('Done:', sig);
+}
+
+async function checkAmmConfig(addr) {
+  const a = await conn.getAccountInfo(addr);
+  if (!a || !a.owner.equals(lp.RAYDIUM_CPMM)) {
+    throw new Error(`No Raydium CPMM fee config at ${addr.toBase58()} on ${cluster}. Try another --amm-config-index (1, 2, ...) or pass --amm-config <address>.`);
+  }
 }
 
 async function confirmPrompt(p) {
@@ -96,10 +101,12 @@ if (!['show', 'init', 'update', 'pause', 'unpause', 'propose-admin', 'accept-adm
     case 'show': return show(c);
     case 'init': {
       if (c) throw new Error('Already initialised. Use "update".');
-      const admin = loadKey(opt('admin'));
+      const deployer = loadKey(opt('deployer', require('os').homedir() + '/.config/solana/id.json'));
+      const adminAddress = new web3.PublicKey(opt('admin-address'));
       const p = params(null);
-      await confirmPrompt(p);
-      return send(lp.initialize({ admin: admin.publicKey, params: p }), admin);
+      await checkAmmConfig(p.raydiumAmmConfig);
+      await confirmPrompt({ admin: adminAddress, ...p });
+      return send(lp.initialize({ authority: deployer.publicKey, admin: adminAddress, params: p }), deployer);
     }
     case 'update':
     case 'pause':
@@ -108,6 +115,7 @@ if (!['show', 'init', 'update', 'pause', 'unpause', 'propose-admin', 'accept-adm
       const admin = loadKey(opt('admin'));
       const p = params(c);
       if (cmd !== 'update') p.paused = cmd === 'pause';
+      await checkAmmConfig(p.raydiumAmmConfig);
       await confirmPrompt(p);
       return send(lp.updateConfig({ admin: admin.publicKey, params: p }), admin);
     }

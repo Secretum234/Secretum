@@ -7,7 +7,7 @@ const path = require('path');
 const { ethers } = require('ethers');
 const { Keypair, PublicKey, Transaction, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const { FailedTransactionMetadata } = require('litesvm');
-const { makeSvm } = require('../devtools/svm');
+const { makeSvm, setUpgradeAuthority } = require('../devtools/svm');
 const S = require('../client/secretum');
 const { runOnce, memoryStore } = require('../certifier/certifier');
 
@@ -66,7 +66,8 @@ before(() => {
   const b = Buffer.alloc(236);
   require('crypto').createHash('sha256').update('account:AmmConfig').digest().subarray(0, 8).copy(b, 0);
   svm.setAccount(amm, { lamports: 10_000_000, data: b, owner: lp.RAYDIUM_CPMM, executable: false });
-  ok([lp.initialize({ admin: admin.publicKey, params: {
+  setUpgradeAuthority(svm, lp.PROGRAM_ID, admin.publicKey);
+  ok([lp.initialize({ authority: admin.publicKey, admin: admin.publicKey, params: {
     certifier: certifier.publicKey, buybackWallet: admin.publicKey, devWallet: admin.publicKey, raydiumAmmConfig: amm,
     devShareBps: 1000, tradeFeeBps: 100, creationFee: 0n, graduationFee: sol(1), initialVirtualSol: sol(42.5), paused: false,
   } })], [admin]);

@@ -75,11 +75,14 @@ pub mod wsol {
 pub mod launchpad {
     use super::*;
 
-    /// One-time setup. The signer becomes admin.
-    pub fn initialize(ctx: Context<Initialize>, params: ConfigParams) -> Result<()> {
+    /// One-time setup. Only the program's upgrade authority (the deployer) can call it, so nobody
+    /// can grab the admin role between deployment and setup. `admin` can be any wallet.
+    pub fn initialize(ctx: Context<Initialize>, admin: Pubkey, params: ConfigParams) -> Result<()> {
+        require_upgrade_authority(&ctx.accounts.program_data, &ctx.accounts.authority.key())?;
+        require!(admin != Pubkey::default(), LaunchpadError::InvalidConfig);
         params.validate()?;
         let c = &mut ctx.accounts.config;
-        c.admin = ctx.accounts.admin.key();
+        c.admin = admin;
         c.bump = ctx.bumps.config;
         params.apply(c);
         check_amm_config(&ctx.accounts.raydium_amm_config, &c.raydium_amm_config)?;
@@ -687,6 +690,23 @@ pub fn certificate_hash(mint: &Pubkey, creator: &Pubkey, name: &str, symbol: &st
     .to_bytes()
 }
 
+pub mod bpf_upgradeable {
+    use anchor_lang::prelude::*;
+    pub const ID: Pubkey = pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
+}
+
+/// ProgramData layout (bincode): u32 tag (3) | u64 slot | Option<Pubkey> upgrade authority.
+fn require_upgrade_authority(program_data: &UncheckedAccount, signer: &Pubkey) -> Result<()> {
+    let (expected, _) = Pubkey::find_program_address(&[crate::ID.as_ref()], &bpf_upgradeable::ID);
+    require_keys_eq!(program_data.key(), expected, LaunchpadError::Unauthorized);
+    require_keys_eq!(*program_data.owner, bpf_upgradeable::ID, LaunchpadError::Unauthorized);
+    let data = program_data.try_borrow_data()?;
+    require!(data.len() >= 45, LaunchpadError::Unauthorized);
+    let tag = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    require!(tag == 3 && data[12] == 1 && &data[13..45] == signer.as_ref(), LaunchpadError::Unauthorized);
+    Ok(())
+}
+
 fn check_amm_config(info: &UncheckedAccount, expected: &Pubkey) -> Result<()> {
     require_keys_eq!(info.key(), *expected, LaunchpadError::InvalidConfig);
     require_keys_eq!(*info.owner, raydium_cp_swap::ID, LaunchpadError::InvalidConfig);
@@ -791,10 +811,13 @@ impl ConfigParams {
 // ====================================================================== accounts
 #[derive(Accounts)]
 pub struct Initialize<'info> {
+    /// Must be this program's upgrade authority.
     #[account(mut)]
-    pub admin: Signer<'info>,
-    #[account(init, payer = admin, space = 8 + Config::INIT_SPACE, seeds = [CONFIG_SEED], bump)]
+    pub authority: Signer<'info>,
+    #[account(init, payer = authority, space = 8 + Config::INIT_SPACE, seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
+    /// CHECK: this program's ProgramData account; verified in require_upgrade_authority
+    pub program_data: UncheckedAccount<'info>,
     /// CHECK: validated against params + owner in handler
     pub raydium_amm_config: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,

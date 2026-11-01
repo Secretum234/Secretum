@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const crypto = require('crypto');
 const { LiteSVM, FailedTransactionMetadata, Clock } = require('litesvm');
-const { makeSvm } = require('../devtools/svm');
+const { makeSvm, setUpgradeAuthority } = require('../devtools/svm');
 const {
   Keypair, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, ComputeBudgetProgram,
 } = require('@solana/web3.js');
@@ -27,7 +27,7 @@ const DEFAULTS = {
   paused: false,
 };
 
-let svm, lp, admin, certifier, devWallet, buyback, alice, bob, carol, ammConfig, params;
+let svm, lp, deployer, admin, certifier, devWallet, buyback, alice, bob, carol, ammConfig, params;
 
 // ------------------------------------------------------------------ helpers
 function send(ixs, signers, { cu } = {}) {
@@ -158,8 +158,9 @@ before(() => {
   svm.addProgramFromFile(PROGRAM_ID, path.join(ROOT, 'target/deploy/launchpad.so'));
   lp = S.makeClient(PROGRAM_ID, 'mainnet');
   svm.addProgramFromFile(lp.RAYDIUM_CPMM, RAYDIUM_SO);
-  [admin, certifier, devWallet, buyback, alice, bob, carol] = Array.from({ length: 7 }, () => Keypair.generate());
-  for (const k of [admin, certifier, alice, bob, carol]) svm.airdrop(k.publicKey, BigInt(10_000 * LAMPORTS_PER_SOL));
+  [deployer, admin, certifier, devWallet, buyback, alice, bob, carol] = Array.from({ length: 8 }, () => Keypair.generate());
+  setUpgradeAuthority(svm, PROGRAM_ID, deployer.publicKey);
+  for (const k of [deployer, admin, certifier, alice, bob, carol]) svm.airdrop(k.publicKey, BigInt(10_000 * LAMPORTS_PER_SOL));
   for (const k of [devWallet, buyback]) svm.airdrop(k.publicKey, BigInt(LAMPORTS_PER_SOL)); // fee wallets must exist (rent-exempt)
   setTime(1_780_000_000);
   ammConfig = Keypair.generate().publicKey;
@@ -169,11 +170,16 @@ before(() => {
 });
 
 // ------------------------------------------------------------------ tests
-test('initialize: rejects bad params, stores config', () => {
-  fails([lp.initialize({ admin: admin.publicKey, params: { ...params, tradeFeeBps: 201 } })], [admin], 'InvalidConfig');
-  fails([lp.initialize({ admin: admin.publicKey, params: { ...params, graduationFee: sol(0.1) } })], [admin], 'InvalidConfig');
-  fails([lp.initialize({ admin: admin.publicKey, params: { ...params, raydiumAmmConfig: Keypair.generate().publicKey } })], [admin], 'InvalidConfig');
-  ok([lp.initialize({ admin: admin.publicKey, params })], [admin]);
+test('initialize: only the deployer can initialise; rejects bad params; sets the chosen admin', () => {
+  const init = (signer, p = params) => lp.initialize({ authority: signer.publicKey, admin: admin.publicKey, params: p });
+  // A stranger (even the future admin) can't front-run setup and grab the config
+  fails([init(alice)], [alice], 'Unauthorized');
+  fails([init(admin)], [admin], 'Unauthorized');
+  fails([init(deployer, { ...params, tradeFeeBps: 201 })], [deployer], 'InvalidConfig');
+  fails([init(deployer, { ...params, graduationFee: sol(0.1) })], [deployer], 'InvalidConfig');
+  fails([init(deployer, { ...params, raydiumAmmConfig: Keypair.generate().publicKey })], [deployer], 'InvalidConfig');
+  ok([init(deployer)], [deployer]);
+  fails([init(deployer)], [deployer], 'already in use');
   const c = config();
   assert.ok(c.admin.equals(admin.publicKey));
   assert.ok(c.devWallet.equals(devWallet.publicKey));

@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { Keypair, PublicKey, Transaction, LAMPORTS_PER_SOL, ComputeBudgetProgram } = require('@solana/web3.js');
 const spl = require('@solana/spl-token');
 const { FailedTransactionMetadata, Clock } = require('litesvm');
-const { makeSvm } = require('../devtools/svm');
+const { makeSvm, setUpgradeAuthority } = require('../devtools/svm');
 const { planBuyback } = require('../devtools/buyback');
 const S = require('../client/secretum');
 
@@ -46,7 +46,8 @@ before(() => {
   const fee = Buffer.alloc(spl.ACCOUNT_SIZE);
   spl.AccountLayout.encode({ mint: S.WSOL_MINT, owner: admin.publicKey, amount: 0n, delegateOption: 0, delegate: PublicKey.default, state: 1, isNativeOption: 1, isNative: 2039280n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default }, fee);
   svm.setAccount(S.CLUSTERS.mainnet.raydiumCreatePoolFee, { lamports: 2039280, data: fee, owner: S.TOKEN_PROGRAM_ID, executable: false });
-  ok([lp.initialize({ admin: admin.publicKey, params: { certifier: admin.publicKey, buybackWallet: buyback.publicKey, devWallet: admin.publicKey,
+  setUpgradeAuthority(svm, lp.PROGRAM_ID, admin.publicKey);
+  ok([lp.initialize({ authority: admin.publicKey, admin: admin.publicKey, params: { certifier: admin.publicKey, buybackWallet: buyback.publicKey, devWallet: admin.publicKey,
     raydiumAmmConfig: amm, devShareBps: 1000, tradeFeeBps: 100, creationFee: sol(0.02), graduationFee: sol(1), initialVirtualSol: sol(42.5), paused: false } })], [admin]);
   const m = Keypair.generate();
   ok([lp.createToken({ creator: admin.publicKey, mint: m.publicKey, name: 'Secretum', symbol: 'SECRETUM', uri: '' })], [admin, m]);

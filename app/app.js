@@ -219,6 +219,7 @@
     document.querySelectorAll('[data-nav]').forEach((a) => a.removeAttribute('aria-current'));
     const coin = hash.match(/^#\/coin\/([1-9A-HJ-NP-Za-km-z]{32,44})$/);
     if (coin) return renderCoin(coin[1]);
+    if (hash === '#/admin') return renderAdmin();
     renderHome(hash);
   }
   window.addEventListener('hashchange', route);
@@ -358,6 +359,97 @@
     } catch (e) { toast(errMessage(e), true); }
     finally { btn.disabled = false; btn.textContent = 'Launch coin'; }
   });
+
+  // ------------------------------------------------------------------ admin page
+  async function renderAdmin() {
+    const app = $('#app');
+    app.replaceChildren(h('div', { class: 'wrap' }, h('p', { class: 'empty' }, 'Reading settings…')));
+    configCache = null;
+    let cfg;
+    try { cfg = await getConfig(); }
+    catch (e) { app.replaceChildren(h('div', { class: 'wrap' }, h('div', { class: 'banner' }, errMessage(e)))); return; }
+    const me = wallet?.publicKey;
+    const isAdmin = !!me && me.equals(cfg.admin);
+    const isPending = !!me && me.equals(cfg.pendingAdmin);
+    const solStr = (l) => String(solOf(l));
+    const field = (name, label, value, hint, attrs = {}) => h('label', { class: 'f' }, label,
+      h('input', { class: 'in', name, value, autocomplete: 'off', disabled: !isAdmin, ...attrs }), hint ? h('span', { class: 'note' }, hint) : null);
+    const form = h('form', { class: 'admin-form', novalidate: true },
+      field('devWallet', 'Dev wallet', cfg.devWallet.toBase58()),
+      field('buybackWallet', 'Buyback wallet', cfg.buybackWallet.toBase58()),
+      field('devSharePct', 'Dev wallet share of fees (%)', String(cfg.devShareBps / 100), 'The rest goes to the buyback wallet.', { inputmode: 'decimal' }),
+      field('tradeFeePct', 'Trading fee (%)', String(cfg.tradeFeeBps / 100), 'Up to 2%.', { inputmode: 'decimal' }),
+      field('creationFee', 'Launch fee (SOL)', solStr(cfg.creationFee), 'Up to 1 SOL.', { inputmode: 'decimal' }),
+      field('graduationFee', 'Graduation fee (SOL)', solStr(cfg.graduationFee), 'Between 0.3 and 5 SOL. Covers Raydium’s pool fee and rent.', { inputmode: 'decimal' }),
+      field('initialVirtualSol', 'Virtual SOL for new coins', solStr(cfg.initialVirtualSol), `New curves fill at twice this amount (now ${fmt(solOf(cfg.initialVirtualSol * 2n))} SOL). Existing coins aren’t affected.`, { inputmode: 'decimal' }),
+      field('certifier', 'Certifier key', cfg.certifier.toBase58(), 'The key your certification service signs with.'),
+      field('raydiumAmmConfig', 'Raydium fee config', cfg.raydiumAmmConfig.toBase58()),
+      h('label', { class: 'f check' }, h('input', { type: 'checkbox', name: 'paused', checked: cfg.paused, disabled: !isAdmin }), ' Pause new launches and buys (selling always works)'),
+    );
+    const changes = h('ul', { class: 'note' });
+    const save = h('button', { class: 'btn wax', type: 'button', disabled: true }, 'Save changes');
+
+    function readForm() {
+      const f = new FormData(form);
+      const pct = (k) => Math.round(parseFloat(f.get(k)) * 100);
+      const lam = (k) => BigInt(Math.round(parseFloat(f.get(k)) * LAMPORTS_PER_SOL));
+      return {
+        devWallet: new PublicKey(String(f.get('devWallet')).trim()), buybackWallet: new PublicKey(String(f.get('buybackWallet')).trim()),
+        certifier: new PublicKey(String(f.get('certifier')).trim()), raydiumAmmConfig: new PublicKey(String(f.get('raydiumAmmConfig')).trim()),
+        devShareBps: pct('devSharePct'), tradeFeeBps: pct('tradeFeePct'),
+        creationFee: lam('creationFee'), graduationFee: lam('graduationFee'), initialVirtualSol: lam('initialVirtualSol'),
+        paused: form.querySelector('[name=paused]').checked,
+      };
+    }
+    function diff() {
+      let next;
+      try { next = readForm(); } catch { changes.replaceChildren(h('li', { class: 'warn' }, 'One of the addresses isn’t a valid Solana address.')); save.disabled = true; return null; }
+      const labels = { devWallet: 'Dev wallet', buybackWallet: 'Buyback wallet', certifier: 'Certifier', raydiumAmmConfig: 'Raydium config', devShareBps: 'Dev share', tradeFeeBps: 'Trading fee', creationFee: 'Launch fee', graduationFee: 'Graduation fee', initialVirtualSol: 'Virtual SOL', paused: 'Paused' };
+      const show = (k, v) => (v instanceof PublicKey ? short(v.toBase58()) : /Bps$/.test(k) ? `${Number(v) / 100}%` : typeof v === 'bigint' ? `${solOf(v)} SOL` : String(v));
+      const items = Object.keys(labels).filter((k) => (next[k] instanceof PublicKey ? !next[k].equals(cfg[k]) : String(next[k]) !== String(cfg[k])))
+        .map((k) => h('li', {}, `${labels[k]}: ${show(k, cfg[k])} → ${show(k, next[k])}`));
+      changes.replaceChildren(...items);
+      save.disabled = !isAdmin || !items.length;
+      return next;
+    }
+    form.addEventListener('input', diff);
+    save.onclick = async () => {
+      const next = diff();
+      if (!next) return;
+      save.disabled = true; save.textContent = 'Confirm in your wallet…';
+      try { await sendTx('Settings update', [lp.updateConfig({ admin: wallet.publicKey, params: next })]); renderAdmin(); }
+      catch (e) { toast(errMessage(e), true); save.textContent = 'Save changes'; diff(); }
+    };
+
+    const payout = h('button', { class: 'btn line', type: 'button', disabled: cfg.feesAccrued === 0n, onclick: async () => {
+      try { await sendTx('Fee payout', [lp.distributeFees({ devWallet: cfg.devWallet, buybackWallet: cfg.buybackWallet })]); renderAdmin(); }
+      catch (e) { toast(errMessage(e), true); }
+    } }, 'Pay out fees');
+    const newAdmin = h('input', { class: 'in', placeholder: 'New admin address', autocomplete: 'off', disabled: !isAdmin });
+    const handover = h('button', { class: 'btn line', type: 'button', disabled: !isAdmin, onclick: async () => {
+      try {
+        const pk = new PublicKey(newAdmin.value.trim());
+        await sendTx('Admin handover', [lp.proposeAdmin({ admin: wallet.publicKey, newAdmin: pk, raydiumAmmConfig: cfg.raydiumAmmConfig })]); renderAdmin();
+      } catch (e) { toast(errMessage(e), true); }
+    } }, 'Propose new admin');
+    const accept = isPending ? h('button', { class: 'btn wax', type: 'button', onclick: async () => {
+      try { await sendTx('Admin role', [lp.acceptAdmin({ newAdmin: wallet.publicKey })]); renderAdmin(); } catch (e) { toast(errMessage(e), true); }
+    } }, 'Accept the admin role') : null;
+
+    const status = !me ? h('div', { class: 'banner' }, 'Connect the admin wallet to change settings. ', h('button', { class: 'btn', type: 'button', onclick: () => connect().then(renderAdmin) }, 'Connect wallet'))
+      : isAdmin ? null
+      : h('div', { class: 'banner' }, `The connected wallet isn’t the admin (${short(cfg.admin.toBase58())}). Settings are read-only.`);
+
+    app.replaceChildren(h('div', { class: 'wrap admin' },
+      h('h1', {}, 'Settings'),
+      h('p', { class: 'muted' }, `Admin ${cfg.admin.toBase58()}`, cfg.pendingAdmin.equals(PublicKey.default) ? '' : `. Handover pending to ${cfg.pendingAdmin.toBase58()}.`),
+      status, accept,
+      h('section', { class: 'panel' }, h('h2', {}, 'Fees waiting to be paid out'),
+        h('p', {}, `${sol(cfg.feesAccrued)}: ${sol((cfg.feesAccrued * BigInt(cfg.devShareBps)) / 10000n)} to the dev wallet, the rest to the buyback wallet. Anyone can trigger this.`), payout),
+      h('section', { class: 'panel' }, h('h2', {}, 'Launchpad settings'), form, changes, save),
+      h('section', { class: 'panel' }, h('h2', {}, 'Hand over the admin role'),
+        h('p', { class: 'muted' }, 'The new wallet must accept on this page before the handover takes effect.'), newAdmin, handover)));
+  }
 
   // ------------------------------------------------------------------ coin page
   async function renderCoin(mint) {

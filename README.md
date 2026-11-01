@@ -69,32 +69,43 @@ There are 20 tests:
 
 ## Deploy (devnet first)
 
-1. **Install tools:** [Rust](https://rustup.rs), the [Solana CLI](https://docs.anza.xyz/cli/install) (which includes `cargo-build-sbf`) and Node 20+.
-2. **Create your program ID.** The ID in this repo has no keypair in it.
-   ```bash
-   solana-keygen new -o target/deploy/launchpad-keypair.json
-   npm run program-id -- $(solana-keygen pubkey target/deploy/launchpad-keypair.json)
-   ```
-3. **Build.** Devnet and mainnet link to different Raydium program IDs, so build for the network you're deploying to:
-   ```bash
-   npm run build:devnet     # or: npm run build   (mainnet)
-   ```
-4. **Deploy:**
-   ```bash
-   solana program deploy target/deploy/launchpad.so --program-id target/deploy/launchpad-keypair.json -u devnet
-   ```
-5. **Initialise the config.** You'll be asked to confirm the values first.
-   ```bash
-   npm run admin -- init --cluster devnet --admin keys/admin.json \
-     --certifier <CERTIFIER_PUBKEY> --dev-wallet <DEV_WALLET> --buyback-wallet <BUYBACK_WALLET>
-   npm run admin -- show --cluster devnet
-   ```
-   The fee wallets must already exist on-chain. Send each one a little SOL first.
-6. **Certification service:** copy `certifier/.env.example` to `certifier/.env`, fill it in, then run `npm run certifier`. It needs:
-   - `monero-wallet-rpc` running against a funded wallet,
-   - a zcashd/Zallet node with a funded shielded address,
-   - a HyperEVM key with a little HYPE for gas.
-7. **Website:** set `cluster`, `rpc`, `programId` and `certifierUrl` in `app/config.js`, then upload the `app/` folder to any static host (Cloudflare Pages, Netlify, Vercel, GitHub Pages). Add the response header `Content-Security-Policy: frame-ancestors 'none'` so the site can't be framed.
+**One command, in GitHub Codespaces** (or any Linux/Mac machine):
+
+```bash
+bash deploy/deploy-devnet.sh
+```
+
+It reads the wallet addresses from `deploy/devnet.json`, then:
+
+1. installs Rust and the Solana CLI if they're missing,
+2. creates a deployer key in `keys/deployer.json`, which becomes the program's upgrade authority,
+3. gets devnet SOL. If the faucet rate-limits, it tells you which address to fund at faucet.solana.com,
+4. creates your own program ID,
+5. builds for devnet and deploys,
+6. sends each fee wallet a little devnet SOL so it exists on-chain,
+7. initialises the config with your admin address, and points the website at devnet.
+
+The script is safe to re-run. **Back up `keys/deployer.json` and `target/deploy/launchpad-keypair.json`.** They aren't in git, and losing the deployer key means you can never upgrade the program.
+
+After that, manage settings from the website's **Settings** page (`#/admin`) by connecting the admin wallet. No keys have to leave your wallet.
+
+**Doing it by hand:**
+```bash
+solana-keygen new -o target/deploy/launchpad-keypair.json
+npm run program-id -- $(solana-keygen pubkey target/deploy/launchpad-keypair.json)
+npm run build:devnet                       # or: npm run build (mainnet); they link different Raydium ids
+solana program deploy target/deploy/launchpad.so --program-id target/deploy/launchpad-keypair.json -u devnet
+npm run admin -- init --cluster devnet --deployer <upgrade-authority-keypair.json> --admin-address <ADMIN> \
+  --certifier <CERTIFIER> --dev-wallet <DEV_WALLET> --buyback-wallet <BUYBACK_WALLET>
+```
+Only the program's upgrade authority can run `init`, so nobody can claim the admin role between deploy and setup. The Raydium fee config is derived automatically (index 0, 0.25%). The tool checks that it exists on the cluster first.
+
+**Certification service:** copy `certifier/.env.example` to `certifier/.env`, fill it in, then run `npm run certifier`. `CERTIFIER_KEYPAIR` must be the keypair file for the certifier address in your config. It needs:
+- `monero-wallet-rpc` running against a funded wallet,
+- a zcashd/Zallet node with a funded shielded address,
+- a HyperEVM key with a little HYPE for gas.
+
+**Website:** `app/config.js` holds `cluster`, `rpc`, `programId` and `certifierUrl`. The deploy script sets the first three for devnet. Upload the `app/` folder to any static host (Cloudflare Pages, Netlify, Vercel, GitHub Pages) and add the response header `Content-Security-Policy: frame-ancestors 'none'`.
 
 ### Before mainnet
 
@@ -110,7 +121,7 @@ There are 20 tests:
 | Wallet | Chain | Used for | Notes |
 |---|---|---|---|
 | Upgrade authority | Solana | Deploying and upgrading the program | Keep offline or in a multisig |
-| Admin | Solana | `admin.js`: fees, wallets, pause | Can't touch curve SOL or block sells |
+| Admin | Solana | Settings page (`#/admin`) or `admin.js`: fees, wallets, pause | Can't touch curve SOL or block sells. Can be a normal Phantom wallet |
 | Certifier | Solana | Writes certificate tx IDs | Needs a little SOL for fees |
 | Dev wallet | Solana | Receives 10% of fees | Must hold some SOL so it exists on-chain |
 | Buyback wallet | Solana | Receives 90% of fees; `buyback.js` spends it on $SECRETUM and burns it | Must hold some SOL |

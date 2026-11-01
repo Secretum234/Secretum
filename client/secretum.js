@@ -20,6 +20,7 @@
   const TOKEN_2022_PROGRAM_ID = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
   const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
   const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
+  const BPF_UPGRADEABLE_LOADER = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
 
   const DECIMALS = 6;
   const ONE_TOKEN = 1_000_000n;
@@ -101,6 +102,7 @@
     const RAY = C.raydiumCpmm;
 
     const configPda = () => pda([S('config')], PROGRAM_ID);
+    const programDataPda = () => pda([PROGRAM_ID.toBytes()], BPF_UPGRADEABLE_LOADER);
     const curvePda = (mint) => pda([S('curve'), new PublicKey(mint).toBytes()], PROGRAM_ID);
     const poolCreatorPda = (mint) => pda([S('pool_creator'), new PublicKey(mint).toBytes()], PROGRAM_ID);
     const poolStatePda = (mint) => pda([S('pool'), new PublicKey(mint).toBytes()], PROGRAM_ID);
@@ -145,13 +147,18 @@
       meta(TOKEN_2022_PROGRAM_ID, false, false), meta(ASSOCIATED_TOKEN_PROGRAM_ID, false, false), meta(SystemProgram.programId, false, false),
     ];
 
-    return {
-      PROGRAM_ID, cluster, RAYDIUM_CPMM: RAY,
-      configPda, curvePda, poolCreatorPda, solVault, poolStatePda, curveVault, userAta, raydium,
+    /** Raydium CPMM fee config PDA: seeds ["amm_config", index as u16 big-endian]. Index 0 = 0.25% fee. */
+    const raydiumAmmConfig = (index = 0) => pda([S('amm_config'), Uint8Array.from([(index >> 8) & 0xff, index & 0xff])], RAY);
 
-      initialize: ({ admin, params }) => ix(
-        [meta(admin, true, true), meta(configPda(), false, true), meta(params.raydiumAmmConfig, false, false), meta(SystemProgram.programId, false, false)],
-        encodeParams(new W().bytes(DISC.initialize), params).out()),
+    return {
+      PROGRAM_ID, cluster, RAYDIUM_CPMM: RAY, raydiumAmmConfig,
+      configPda, programDataPda, curvePda, poolCreatorPda, solVault, poolStatePda, curveVault, userAta, raydium,
+
+      /** authority = the program's upgrade authority (deployer); admin = the wallet that will manage the config. */
+      initialize: ({ authority, admin, params }) => ix(
+        [meta(authority, true, true), meta(configPda(), false, true), meta(programDataPda(), false, false),
+          meta(params.raydiumAmmConfig, false, false), meta(SystemProgram.programId, false, false)],
+        encodeParams(new W().bytes(DISC.initialize).pk(admin), params).out()),
 
       updateConfig: ({ admin, params }) => ix(
         [meta(admin, true, false), meta(configPda(), false, true), meta(params.raydiumAmmConfig, false, false)],

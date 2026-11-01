@@ -17,19 +17,18 @@ Or use WSL (Windows Subsystem for Linux). See README "Try it locally".`);
 const { FailedTransactionMetadata, Clock } = require('litesvm');
 const bs58 = (require('bs58').default || require('bs58'));
 const S = require('../client/secretum');
-const { makeSvm } = require('./svm');
+const { makeSvm, setUpgradeAuthority } = require('./svm');
 
 const ROOT = path.join(__dirname, '..');
 const APP = path.join(ROOT, 'app');
 const PORT = Number(process.env.PORT || 8899);
-const PROGRAM_ID = new PublicKey(require('../devtools/program-id').PROGRAM_ID);
+// The sandbox always runs the prebuilt program at its own fixed id, independent of your builds.
+const PROGRAM_ID = new PublicKey('HPomwh2M3sMcD9LpTALifnT41RQYx3rq7sUn3HrvukpR');
 const sol = (x) => BigInt(Math.round(x * LAMPORTS_PER_SOL));
 
 const svm = makeSvm({ sigverify: false });
 const lp = S.makeClient(PROGRAM_ID, 'mainnet');
-// Use your own build if you've run `npm run build`; otherwise the prebuilt copy in the repo.
-const BUILT = path.join(ROOT, 'target/deploy/launchpad.so');
-svm.addProgramFromFile(PROGRAM_ID, fs.existsSync(BUILT) ? BUILT : path.join(__dirname, 'prebuilt/launchpad.so'));
+svm.addProgramFromFile(PROGRAM_ID, path.join(__dirname, 'prebuilt/launchpad.so'));
 svm.addProgramFromFile(lp.RAYDIUM_CPMM, path.join(ROOT, 'vendor/raydium_cp_swap.so'));
 
 let slot = 1000n;
@@ -77,7 +76,10 @@ function execute(ixs, signers, cu) {
 }
 
 // ----------------------------------------------------------- seed data
-const admin = Keypair.generate();
+const admin = Keypair.generate(); // plays the deployer
+// The website's burner wallet is the admin, so the Settings page can be tried out too.
+const burner = Keypair.generate();
+svm.airdrop(burner.publicKey, sol(500));
 const certifier = Keypair.generate();
 const traders = Array.from({ length: 4 }, () => Keypair.generate());
 for (const k of [admin, certifier, ...traders]) svm.airdrop(k.publicKey, sol(100_000));
@@ -92,7 +94,8 @@ const amm = Keypair.generate().publicKey;
   spl.AccountLayout.encode({ mint: S.WSOL_MINT, owner: admin.publicKey, amount: 0n, delegateOption: 0, delegate: PublicKey.default, state: 1, isNativeOption: 1, isNative: 2039280n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default }, fee);
   svm.setAccount(S.CLUSTERS.mainnet.raydiumCreatePoolFee, { lamports: 2039280, data: fee, owner: S.TOKEN_PROGRAM_ID, executable: false });
 }
-execute([lp.initialize({ admin: admin.publicKey, params: {
+setUpgradeAuthority(svm, lp.PROGRAM_ID, admin.publicKey);
+execute([lp.initialize({ authority: admin.publicKey, admin: burner.publicKey, params: {
   certifier: certifier.publicKey, buybackWallet: admin.publicKey, devWallet: admin.publicKey, raydiumAmmConfig: amm,
   devShareBps: 1000, tradeFeeBps: 100, creationFee: sol(0.02), graduationFee: sol(1), initialVirtualSol: sol(42.5), paused: false,
 } })], [admin]);
@@ -216,11 +219,10 @@ function handle(req) {
 }
 
 // ----------------------------------------------------------- static site + sandbox config
-const burner = Keypair.generate();
-svm.airdrop(burner.publicKey, sol(500));
 const sandboxConfig = `
 window.SECRETUM_CONFIG.cluster = 'mainnet'; // sandbox runs Raydium's mainnet build
 window.SECRETUM_CONFIG.networkName = 'Sandbox';
+window.SECRETUM_CONFIG.programId = '${PROGRAM_ID.toBase58()}';
 window.SECRETUM_CONFIG.rpc = location.origin + '/rpc';
 window.SECRETUM_CONFIG.sandbox = true;
 window.SECRETUM_CONFIG.explorers.solanaTx = () => '#';
@@ -262,5 +264,5 @@ http.createServer((req, res) => {
   res.end(data);
 }).listen(PORT, () => {
   console.log(`Secretum sandbox running at http://localhost:${PORT}`);
-  console.log(`  ${SEED.length} sample coins, burner wallet ${burner.publicKey.toBase58()} (500 SOL)`);
+  console.log(`  ${SEED.length} sample coins, burner wallet ${burner.publicKey.toBase58()} (500 SOL, also the admin: see /#/admin)`);
 });

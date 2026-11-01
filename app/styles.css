@@ -213,3 +213,14 @@ footer .wrap { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space
 .flush { margin: 0; }
 .cert h2 { font: 400 var(--step-2)/1.15 var(--serif); margin: 0 0 8px; }
 .coin section[aria-labelledby='cert-title'] { margin-bottom: 32px; }
+
+/* ---------- admin */
+.admin { padding: 36px 0 72px; max-width: 760px; }
+.admin h1 { font: 400 var(--step-3)/1.1 var(--serif); margin: 0 0 4px; }
+.admin > p { overflow-wrap: anywhere; }
+.admin .panel { margin-top: 24px; display: grid; gap: 14px; }
+.admin-form { display: grid; gap: 14px; }
+.admin-form .note { margin: 0; }
+.in:disabled { opacity: .7; }
+label.check { display: flex; align-items: center; gap: 10px; }
+.admin .panel > .btn { justify-self: start; }

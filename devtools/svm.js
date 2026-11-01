@@ -33,4 +33,15 @@ function makeSvm({ sigverify = true } = {}) {
   };
 }
 
-module.exports = { makeSvm };
+/** Sets the upgrade authority on a program loaded into LiteSVM (it loads with none). */
+function setUpgradeAuthority(svm, programId, authority) {
+  const loader = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
+  const pd = PublicKey.findProgramAddressSync([new PublicKey(programId).toBytes()], loader)[0];
+  const a = svm.getAccount(pd);
+  const data = Buffer.from(a.data);
+  data[12] = 1;
+  new PublicKey(authority).toBuffer().copy(data, 13);
+  svm.setAccount(pd, { ...a, data });
+}
+
+module.exports = { makeSvm, setUpgradeAuthority };

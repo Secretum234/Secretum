@@ -49,7 +49,7 @@ async function typeAmount(v) {
   await new Promise((r) => setTimeout(r, 400));
 }
 
-test('website: launch, buy, sell, fill, graduate, verify', { skip: !fs.existsSync(CHROME) && 'Chrome not found' }, async () => {
+test('website: launch, buy, sell, fill, graduate, verify, change settings, pay out fees', { skip: !fs.existsSync(CHROME) && 'Chrome not found' }, async () => {
   await page.evaluateOnNewDocument(() => {
     window.__toasts = [];
     new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.classList?.contains('toast') && window.__toasts.push(n.textContent))))
@@ -101,6 +101,19 @@ test('website: launch, buy, sell, fill, graduate, verify', { skip: !fs.existsSyn
   await page.goto(BASE + '/#/');
   await clickText('.tabs button', 'Graduated');
   await waitText('.registry .name', 'Endtoend Coin');
+
+  // Settings page: the sandbox wallet is the admin
+  await page.goto(BASE + '/#/admin');
+  await page.waitForSelector('.admin-form [name=tradeFeePct]:not([disabled])', { timeout: 20000 });
+  const fee = await page.$('.admin-form [name=tradeFeePct]');
+  await fee.click({ clickCount: 3 });
+  await fee.type('1.5');
+  await waitText('.admin li', 'Trading fee: 1% → 1.5%');
+  await clickText('.admin button', 'Save changes');
+  await waitText('.toast', 'Settings update confirmed');
+  await page.waitForFunction(() => document.querySelector('.admin-form [name=tradeFeePct]')?.value === '1.5', { timeout: 20000 });
+  await clickText('.admin button', 'Pay out fees');
+  await waitText('.toast', 'Fee payout confirmed');
 
   const real = consoleErrors.filter((e) => !/favicon|ws:\/\/|WebSocket/i.test(e));
   assert.deepEqual(real, [], 'no console errors');
